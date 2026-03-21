@@ -2,19 +2,18 @@ require('dotenv').config();
 const express   = require('express');
 const mongoose  = require('mongoose');
 const cors      = require('cors');
-require('dotenv').config();
 
 const app       = express();
 const PORT      = process.env.PORT      || 3000;
 const MONGO_URI = process.env.MONGO_URI || 'mongodb://localhost:27017/attendance';
 
-// ── Middleware ──────────────────────────────────────────────
 app.use(cors());
 app.use(express.json());
 
 // ── Schema ──────────────────────────────────────────────────
 const sessionSchema = new mongoose.Schema(
   {
+    teacherId:     { type: String,   default: 'default' },  // ← NEW
     submittedAt:   { type: Date,     default: Date.now },
     date:          { type: String,   default: '' },
     class:         { type: String,   default: '' },
@@ -41,26 +40,18 @@ const Session = mongoose.model('Session', sessionSchema);
 
 // ── Routes ──────────────────────────────────────────────────
 
-// Health check
 app.get('/', (req, res) => {
-  res.json({ status: 'ok', message: 'Chalkpad Attendance Server is running' });
+  res.json({ status: 'ok', message: 'Haziri Server is running' });
 });
 
 // POST — save a session (called by the browser extension)
 app.post('/api/session', async (req, res) => {
   try {
-    const {
-      config,
-      totalStudents,
-      presentCount,
-      absentRolls,
-      allStudents,
-      submittedAt
-    } = req.body;
-
+    const { config, totalStudents, presentCount, absentRolls, allStudents, submittedAt, teacherId } = req.body;
     const info = config?.info || {};
 
     const session = new Session({
+      teacherId:     teacherId || 'default',          // ← NEW
       submittedAt:   submittedAt ? new Date(submittedAt) : new Date(),
       date:          info.date       || '',
       class:         info.class      || '',
@@ -83,14 +74,17 @@ app.post('/api/session', async (req, res) => {
   }
 });
 
-// GET — all sessions with optional search + pagination (used by mobile app)
+// GET — sessions filtered by teacherId
 app.get('/api/sessions', async (req, res) => {
   try {
-    const { page = 1, limit = 30, search = '' } = req.query;
+    const { page = 1, limit = 1000, search = '', teacherId = 'default' } = req.query;
     const skip = (parseInt(page) - 1) * parseInt(limit);
+
+    const baseFilter = { teacherId };                 // ← filter by teacher
 
     const filter = search
       ? {
+          ...baseFilter,
           $or: [
             { group:   { $regex: search, $options: 'i' } },
             { subject: { $regex: search, $options: 'i' } },
@@ -98,23 +92,14 @@ app.get('/api/sessions', async (req, res) => {
             { class:   { $regex: search, $options: 'i' } }
           ]
         }
-      : {};
+      : baseFilter;
 
     const [sessions, total] = await Promise.all([
-      Session.find(filter)
-        .sort({ submittedAt: -1 })
-        .skip(skip)
-        .limit(parseInt(limit))
-        .lean(),
+      Session.find(filter).sort({ submittedAt: -1 }).skip(skip).limit(parseInt(limit)).lean(),
       Session.countDocuments(filter)
     ]);
 
-    res.json({
-      sessions,
-      total,
-      page:  parseInt(page),
-      limit: parseInt(limit)
-    });
+    res.json({ sessions, total, page: parseInt(page), limit: parseInt(limit) });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -131,29 +116,22 @@ app.get('/api/sessions/:id', async (req, res) => {
   }
 });
 
-// GET — summary stats for mobile dashboard
+// GET — stats filtered by teacherId
 app.get('/api/stats', async (req, res) => {
   try {
-    const total = await Session.countDocuments();
+    const { teacherId = 'default' } = req.query;     // ← filter by teacher
+    const filter = { teacherId };
 
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const todayCount = await Session.countDocuments({
-      submittedAt: { $gte: today }
-    });
+    const total = await Session.countDocuments(filter);
+    const today = new Date(); today.setHours(0,0,0,0);
+    const todayCount = await Session.countDocuments({ ...filter, submittedAt: { $gte: today } });
 
     const agg = await Session.aggregate([
-      {
-        $group: {
-          _id:          null,
-          totalStudents: { $sum: '$totalStudents' },
-          totalPresent:  { $sum: '$presentCount' }
-        }
-      }
+      { $match: filter },
+      { $group: { _id: null, totalStudents: { $sum: '$totalStudents' }, totalPresent: { $sum: '$presentCount' } } }
     ]);
 
     const sums = agg[0] || { totalStudents: 0, totalPresent: 0 };
-
     res.json({
       totalSessions: total,
       todaySessions: todayCount,
@@ -177,15 +155,9 @@ app.delete('/api/sessions/:id', async (req, res) => {
 });
 
 // ── Connect & Start ─────────────────────────────────────────
-mongoose
-  .connect(MONGO_URI)
+mongoose.connect(MONGO_URI)
   .then(() => {
     console.log('✅  MongoDB connected →', MONGO_URI);
-    app.listen(PORT, () => {
-      console.log(`🚀  Server running  →  http://localhost:${PORT}`);
-    });
+    app.listen(PORT, () => console.log(`🚀  Server running → http://localhost:${PORT}`));
   })
-  .catch((err) => {
-    console.error('❌  MongoDB connection failed:', err.message);
-    process.exit(1);
-  });
+  .catch(err => { console.error('❌  MongoDB connection failed:', err.message); process.exit(1); });
