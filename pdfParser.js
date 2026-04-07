@@ -1,5 +1,5 @@
 const fs = require('fs');
-const pdfjsLib = require('pdfjs-dist/legacy/build/pdf.js'); // Use legacy for commonjs Node.js environments
+
 
 // Helpers
 function isDay(text) {
@@ -102,6 +102,9 @@ function parseCellContent(text) {
 }
 
 async function extractTimetable(buffer, trainerName) {
+  // Dynamically import pdfjs-dist since it is an ES module
+  const pdfjsLib = await import('pdfjs-dist');
+  
   const doc = await pdfjsLib.getDocument({ data: buffer }).promise;
   const entries = [];
   
