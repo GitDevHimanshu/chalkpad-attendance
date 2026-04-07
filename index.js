@@ -2,6 +2,8 @@ require('dotenv').config();
 const express   = require('express');
 const mongoose  = require('mongoose');
 const cors      = require('cors');
+const multer    = require('multer');
+const { extractTimetable } = require('./pdfParser');
 
 const app       = express();
 const PORT      = process.env.PORT      || 3000;
@@ -9,6 +11,8 @@ const MONGO_URI = process.env.MONGO_URI || 'mongodb://localhost:27017/attendance
 
 app.use(cors());
 app.use(express.json());
+
+const upload = multer({ storage: multer.memoryStorage() });
 
 // ── Schema ──────────────────────────────────────────────────
 const sessionSchema = new mongoose.Schema(
@@ -70,6 +74,29 @@ app.post('/api/session', async (req, res) => {
     res.status(201).json({ success: true, id: session._id });
   } catch (err) {
     console.error('Save error:', err.message);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// POST — parse and extract timetable from PDF
+app.post('/api/parse-timetable', upload.single('file'), async (req, res) => {
+  try {
+    const { trainerName } = req.body;
+    if (!trainerName) {
+      return res.status(400).json({ success: false, error: 'trainerName is required' });
+    }
+    if (!req.file) {
+      return res.status(400).json({ success: false, error: 'A PDF file is required' });
+    }
+
+    const entries = await extractTimetable(
+      new Uint8Array(req.file.buffer),
+      trainerName
+    );
+
+    res.json({ success: true, count: entries.length, entries });
+  } catch (err) {
+    console.error('Parse error:', err);
     res.status(500).json({ success: false, error: err.message });
   }
 });
