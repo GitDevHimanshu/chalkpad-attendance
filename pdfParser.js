@@ -246,7 +246,7 @@ async function extractTimetable(buffer, trainerName) {
 
             const endTime = new Date(timeRange.start.getTime() + durationMinutes * 60000);
 
-            entries.add({
+            entries.push({
               dayOfWeek: normalizeDay(dayText),
               startTime: timeRange.start.toISOString(),
               endTime: endTime.toISOString(),
