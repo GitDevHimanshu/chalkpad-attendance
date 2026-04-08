@@ -1,11 +1,11 @@
 require('dotenv').config();
-const express   = require('express');
-const mongoose  = require('mongoose');
-const cors      = require('cors');
+const express = require('express');
+const mongoose = require('mongoose');
+const cors = require('cors');
 
-const app       = express();
-const PORT      = process.env.PORT      || 3000;
-const MONGO_URI = process.env.MONGO_URI || 'mongodb://localhost:27017/attendance';
+const app = express();
+const PORT = process.env.PORT;
+const MONGO_URI = process.env.MONGO_URI;
 
 app.use(cors());
 app.use(express.json());
@@ -13,22 +13,22 @@ app.use(express.json());
 // ── Schema ──────────────────────────────────────────────────
 const sessionSchema = new mongoose.Schema(
   {
-    teacherId:     { type: String,   default: 'default' },  // ← NEW
-    submittedAt:   { type: Date,     default: Date.now },
-    date:          { type: String,   default: '' },
-    class:         { type: String,   default: '' },
-    subject:       { type: String,   default: '' },
-    group:         { type: String,   default: '' },
-    periods:       { type: [Number], default: [] },
-    timeTable:     { type: String,   default: '' },
-    periodSlot:    { type: String,   default: '' },
-    totalStudents: { type: Number,   default: 0 },
-    presentCount:  { type: Number,   default: 0 },
-    absentRolls:   { type: [String], default: [] },
+    teacherId: { type: String, default: 'default' },  // ← NEW
+    submittedAt: { type: Date, default: Date.now },
+    date: { type: String, default: '' },
+    class: { type: String, default: '' },
+    subject: { type: String, default: '' },
+    group: { type: String, default: '' },
+    periods: { type: [Number], default: [] },
+    timeTable: { type: String, default: '' },
+    periodSlot: { type: String, default: '' },
+    totalStudents: { type: Number, default: 0 },
+    presentCount: { type: Number, default: 0 },
+    absentRolls: { type: [String], default: [] },
     allStudents: [
       {
-        roll:   String,
-        name:   String,
+        roll: String,
+        name: String,
         status: { type: String, enum: ['P', 'A'] }
       }
     ]
@@ -51,19 +51,19 @@ app.post('/api/session', async (req, res) => {
     const info = config?.info || {};
 
     const session = new Session({
-      teacherId:     teacherId || 'default',          // ← NEW
-      submittedAt:   submittedAt ? new Date(submittedAt) : new Date(),
-      date:          info.date       || '',
-      class:         info.class      || '',
-      subject:       info.subject    || '',
-      group:         info.group      || '',
-      periods:       info.period     || [],
-      timeTable:     info.timeTable  || '',
-      periodSlot:    info.periodSlot || '',
-      totalStudents: totalStudents   ?? 0,
-      presentCount:  presentCount    ?? 0,
-      absentRolls:   absentRolls     || [],
-      allStudents:   allStudents     || []
+      teacherId: teacherId || 'default',          // ← NEW
+      submittedAt: submittedAt ? new Date(submittedAt) : new Date(),
+      date: info.date || '',
+      class: info.class || '',
+      subject: info.subject || '',
+      group: info.group || '',
+      periods: info.period || [],
+      timeTable: info.timeTable || '',
+      periodSlot: info.periodSlot || '',
+      totalStudents: totalStudents ?? 0,
+      presentCount: presentCount ?? 0,
+      absentRolls: absentRolls || [],
+      allStudents: allStudents || []
     });
 
     await session.save();
@@ -84,14 +84,14 @@ app.get('/api/sessions', async (req, res) => {
 
     const filter = search
       ? {
-          ...baseFilter,
-          $or: [
-            { group:   { $regex: search, $options: 'i' } },
-            { subject: { $regex: search, $options: 'i' } },
-            { date:    { $regex: search, $options: 'i' } },
-            { class:   { $regex: search, $options: 'i' } }
-          ]
-        }
+        ...baseFilter,
+        $or: [
+          { group: { $regex: search, $options: 'i' } },
+          { subject: { $regex: search, $options: 'i' } },
+          { date: { $regex: search, $options: 'i' } },
+          { class: { $regex: search, $options: 'i' } }
+        ]
+      }
       : baseFilter;
 
     const [sessions, total] = await Promise.all([
@@ -123,7 +123,7 @@ app.get('/api/stats', async (req, res) => {
     const filter = { teacherId };
 
     const total = await Session.countDocuments(filter);
-    const today = new Date(); today.setHours(0,0,0,0);
+    const today = new Date(); today.setHours(0, 0, 0, 0);
     const todayCount = await Session.countDocuments({ ...filter, submittedAt: { $gte: today } });
 
     const agg = await Session.aggregate([
@@ -136,8 +136,8 @@ app.get('/api/stats', async (req, res) => {
       totalSessions: total,
       todaySessions: todayCount,
       totalStudents: sums.totalStudents,
-      totalPresent:  sums.totalPresent,
-      totalAbsent:   sums.totalStudents - sums.totalPresent
+      totalPresent: sums.totalPresent,
+      totalAbsent: sums.totalStudents - sums.totalPresent
     });
   } catch (err) {
     res.status(500).json({ error: err.message });
