@@ -20,6 +20,7 @@ const sessionSchema = new mongoose.Schema({
   periods:       [Number],
   timeTable:     String,
   periodSlot:    String,
+  specialization: String,
   totalStudents: Number,
   presentCount:  Number,
   absentRolls:   [String],
@@ -31,6 +32,17 @@ const sessionSchema = new mongoose.Schema({
 }, { timestamps: true });
 
 const Session = mongoose.model('Session', sessionSchema);
+
+const taskSchema = new mongoose.Schema({
+  teacherId:   { type: String, default: 'default', index: true },
+  title:       { type: String, required: true },
+  description: { type: String, default: '' },
+  completed:   { type: Boolean, default: false },
+  priority:    { type: String, enum: ['low', 'medium', 'high'], default: 'medium' },
+  dueDate:     { type: String, default: '' }
+}, { timestamps: true });
+
+const Task = mongoose.model('Task', taskSchema);
 
 // ── Routes ──────────────────────────────────────────
 
@@ -62,6 +74,7 @@ app.post('/api/session', async (req, res) => {
       periods:       info.period        || [],
       timeTable:     info.timeTable     || '',
       periodSlot:    info.periodSlot    || '',
+      specialization: info.specialization || '',
       totalStudents: totalStudents      ?? 0,
       presentCount:  presentCount       ?? 0,
       absentRolls:   absentRolls        || [],
@@ -84,6 +97,58 @@ app.get('/api/sessions', async (req, res) => {
       .limit(200)
       .lean();
     res.json(sessions);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── Task Routes ─────────────────────────────────────
+
+app.get('/api/tasks', async (req, res) => {
+  try {
+    const { teacherId = 'default' } = req.query;
+    const tasks = await Task.find({ teacherId }).sort({ createdAt: -1 }).lean();
+    res.json(tasks);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/tasks', async (req, res) => {
+  try {
+    const { teacherId = 'default', title, description = '', priority = 'medium', dueDate = '' } = req.body;
+    if (!title || !title.trim()) return res.status(400).json({ success: false, error: 'Title required' });
+    const task = new Task({ teacherId, title: title.trim(), description: description.trim(), priority, dueDate });
+    await task.save();
+    res.status(201).json({ success: true, task });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.put('/api/tasks/:id', async (req, res) => {
+  try {
+    const { title, description, completed, priority, dueDate } = req.body;
+    const updateData = {};
+    if (typeof title === 'string') updateData.title = title.trim();
+    if (typeof description === 'string') updateData.description = description.trim();
+    if (typeof completed === 'boolean') updateData.completed = completed;
+    if (priority) updateData.priority = priority;
+    if (typeof dueDate === 'string') updateData.dueDate = dueDate;
+
+    const task = await Task.findByIdAndUpdate(req.params.id, updateData, { new: true }).lean();
+    if (!task) return res.status(404).json({ error: 'Task not found' });
+    res.json({ success: true, task });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.delete('/api/tasks/:id', async (req, res) => {
+  try {
+    const task = await Task.findByIdAndDelete(req.params.id);
+    if (!task) return res.status(404).json({ error: 'Task not found' });
+    res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
