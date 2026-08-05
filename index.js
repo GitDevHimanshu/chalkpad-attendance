@@ -2,13 +2,30 @@ require('dotenv').config();
 const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
+const http = require('http');
+const { Server } = require('socket.io');
 
 const app = express();
+const httpServer = http.createServer(app);
+const io = new Server(httpServer, {
+  cors: { origin: '*' }
+});
+
 const PORT = process.env.PORT || 10000;
 const MONGO_URI = process.env.MONGO_URI;
 
 app.use(cors());
 app.use(express.json());
+
+// ── Socket.io Connection & Rooms ────────────────────────────
+io.on('connection', (socket) => {
+  socket.on('join_teacher_room', (teacherId) => {
+    if (teacherId) {
+      socket.join(teacherId);
+      console.log(`[Socket] Client ${socket.id} joined room: ${teacherId}`);
+    }
+  });
+});
 
 // ── Schema ──────────────────────────────────────────────────
 const sessionSchema = new mongoose.Schema(
@@ -199,6 +216,10 @@ app.post('/api/tasks', async (req, res) => {
       dueDate
     });
     await task.save();
+    
+    // Broadcast real-time socket event
+    io.to(teacherId).emit('task_created', task);
+
     res.status(201).json({ success: true, task });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
@@ -218,6 +239,10 @@ app.put('/api/tasks/:id', async (req, res) => {
 
     const task = await Task.findByIdAndUpdate(req.params.id, updateData, { new: true }).lean();
     if (!task) return res.status(404).json({ error: 'Task not found' });
+    
+    // Broadcast real-time socket event
+    io.to(task.teacherId || 'default').emit('task_updated', task);
+
     res.json({ success: true, task });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -229,6 +254,10 @@ app.delete('/api/tasks/:id', async (req, res) => {
   try {
     const task = await Task.findByIdAndDelete(req.params.id);
     if (!task) return res.status(404).json({ error: 'Task not found' });
+    
+    // Broadcast real-time socket event
+    io.to(task.teacherId || 'default').emit('task_deleted', req.params.id);
+
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -251,7 +280,7 @@ const connectWithRetry = () => {
 
 connectWithRetry();
 
-// Start the server regardless of DB state (prevents Render boot failure)
-app.listen(PORT, () => {
-  console.log(`🚀  Server running via Port ${PORT}`);
+// Start the server via httpServer (enables WebSockets + Express)
+httpServer.listen(PORT, () => {
+  console.log(`🚀  Server running with Socket.io via Port ${PORT}`);
 });

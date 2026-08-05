@@ -1,14 +1,25 @@
 const express  = require('express');
 const mongoose = require('mongoose');
 const cors     = require('cors');
+const http     = require('http');
+const { Server } = require('socket.io');
 
 const app  = express();
+const httpServer = http.createServer(app);
+const io = new Server(httpServer, { cors: { origin: '*' } });
+
 const PORT = process.env.PORT || 3000;
 const MONGO_URI = process.env.MONGO_URI || 'mongodb://localhost:27017/attendance';
 
 // ── Middleware ──────────────────────────────────────
 app.use(cors());
 app.use(express.json());
+
+io.on('connection', (socket) => {
+  socket.on('join_teacher_room', (teacherId) => {
+    if (teacherId) socket.join(teacherId);
+  });
+});
 
 // ── MongoDB Schema ──────────────────────────────────
 const sessionSchema = new mongoose.Schema({
@@ -120,6 +131,7 @@ app.post('/api/tasks', async (req, res) => {
     if (!title || !title.trim()) return res.status(400).json({ success: false, error: 'Title required' });
     const task = new Task({ teacherId, title: title.trim(), description: description.trim(), priority, dueDate });
     await task.save();
+    io.to(teacherId).emit('task_created', task);
     res.status(201).json({ success: true, task });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
@@ -138,6 +150,7 @@ app.put('/api/tasks/:id', async (req, res) => {
 
     const task = await Task.findByIdAndUpdate(req.params.id, updateData, { new: true }).lean();
     if (!task) return res.status(404).json({ error: 'Task not found' });
+    io.to(task.teacherId || 'default').emit('task_updated', task);
     res.json({ success: true, task });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -148,6 +161,7 @@ app.delete('/api/tasks/:id', async (req, res) => {
   try {
     const task = await Task.findByIdAndDelete(req.params.id);
     if (!task) return res.status(404).json({ error: 'Task not found' });
+    io.to(task.teacherId || 'default').emit('task_deleted', req.params.id);
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -158,7 +172,7 @@ app.delete('/api/tasks/:id', async (req, res) => {
 mongoose.connect(MONGO_URI)
   .then(() => {
     console.log(`✅ MongoDB connected: ${MONGO_URI}`);
-    app.listen(PORT, () => {
+    httpServer.listen(PORT, () => {
       console.log(`🚀 Server running at http://localhost:${PORT}`);
     });
   })
